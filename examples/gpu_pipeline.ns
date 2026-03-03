@@ -20,5 +20,7 @@ worker spawn wPrint ctx c1 interval_ms 200 priority low source input 0.1,0.2,0.3
 
 chan push in 1,0,0,0
 chan push in 0,1,0,0
-chan pop out
+sleep 300
+chan info out
 stats
+worker stopall
