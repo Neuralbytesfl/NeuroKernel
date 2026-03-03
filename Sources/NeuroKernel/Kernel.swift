@@ -260,24 +260,49 @@ final class Kernel {
         var avgAcc: Float = 0
 
         for _ in 0..<epochs {
-            var epochLoss: Float = 0
-            var correct = 0
+            var gradByDense: [String: DenseGrad] = [:]
+            for node in model.nodes where node.kind == .dense {
+                guard let dp = node.dense else { continue }
+                gradByDense[node.name] = DenseGrad(w: [Float](repeating: 0, count: dp.w.count),
+                                                   b: [Float](repeating: 0, count: dp.b.count))
+            }
 
             for sample in samples {
                 let (probs, preByName) = try trainForward(model: model, input: sample.input)
                 guard sample.label >= 0, sample.label < probs.count else {
                     throw NKError.runtime("Label \(sample.label) out of range 0..<\(probs.count)")
                 }
+                var delta = probs
+                delta[sample.label] -= 1.0
+                try trainBackwardAccumulate(model: model, deltaOut: delta, preByName: preByName, grads: &gradByDense)
+            }
 
+            let invN = 1.0 / Float(samples.count)
+            for (nodeName, grad) in gradByDense {
+                guard let idx = nodeIndexByName[nodeName] else {
+                    throw NKError.runtime("Missing dense node \(nodeName)")
+                }
+                guard var dp = model.nodes[idx].dense else {
+                    throw NKError.runtime("Dense missing params \(nodeName)")
+                }
+                for i in 0..<dp.w.count {
+                    dp.w[i] -= lr * grad.w[i] * invN
+                }
+                for i in 0..<dp.b.count {
+                    dp.b[i] -= lr * grad.b[i] * invN
+                }
+                model.nodes[idx].dense = dp
+            }
+
+            var epochLoss: Float = 0
+            var correct = 0
+            for sample in samples {
+                let (probs, _) = try trainForward(model: model, input: sample.input)
                 let p = max(probs[sample.label], 1e-9)
                 epochLoss += -logf(p)
                 if argmax(probs) == sample.label {
                     correct += 1
                 }
-
-                var delta = probs
-                delta[sample.label] -= 1.0
-                try trainBackwardUpdate(model: &model, deltaOut: delta, preByName: preByName, lr: lr)
             }
 
             avgLoss = epochLoss / Float(samples.count)
@@ -353,7 +378,12 @@ final class Kernel {
         return (x, preByName)
     }
 
-    private func trainBackwardUpdate(model: inout ModelGraph, deltaOut: [Float], preByName: [String: [Float]], lr: Float) throws {
+    private struct DenseGrad {
+        var w: [Float]
+        var b: [Float]
+    }
+
+    private func trainBackwardAccumulate(model: ModelGraph, deltaOut: [Float], preByName: [String: [Float]], grads: inout [String: DenseGrad]) throws {
         let nodeIndexByName = Dictionary(uniqueKeysWithValues: model.nodes.enumerated().map { ($1.name, $0) })
         var delta = deltaOut
 
@@ -361,7 +391,7 @@ final class Kernel {
             guard let idx = nodeIndexByName[nodeName] else {
                 throw NKError.runtime("Missing node \(nodeName)")
             }
-            var node = model.nodes[idx]
+            let node = model.nodes[idx]
 
             switch node.kind {
             case .input:
@@ -383,7 +413,7 @@ final class Kernel {
                 }
 
             case .dense:
-                guard var dp = node.dense else { throw NKError.runtime("Dense missing params \(node.name)") }
+                guard let dp = node.dense else { throw NKError.runtime("Dense missing params \(node.name)") }
                 guard let pre = preByName[node.name] else {
                     throw NKError.runtime("Backward missing dense input for \(node.name)")
                 }
@@ -393,6 +423,9 @@ final class Kernel {
 
                 let oldW = dp.w
                 var deltaPrev = [Float](repeating: 0, count: dp.inSize)
+                guard var g = grads[node.name] else {
+                    throw NKError.runtime("Missing grad buffer for dense \(node.name)")
+                }
 
                 for j in 0..<dp.outSize {
                     let d = delta[j]
@@ -400,13 +433,11 @@ final class Kernel {
                     for i in 0..<dp.inSize {
                         let wi = row + i
                         deltaPrev[i] += oldW[wi] * d
-                        dp.w[wi] = oldW[wi] - (lr * d * pre[i])
+                        g.w[wi] += d * pre[i]
                     }
-                    dp.b[j] -= lr * d
+                    g.b[j] += d
                 }
-
-                node.dense = dp
-                model.nodes[idx] = node
+                grads[node.name] = g
                 delta = deltaPrev
             }
         }

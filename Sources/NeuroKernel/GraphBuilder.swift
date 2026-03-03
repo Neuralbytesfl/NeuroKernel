@@ -40,7 +40,8 @@ final class GraphBuilder {
                 }
                 // Secure/Det init weights/bias using kernel RNG
                 let w = try kernel.randFloats(count: outN * inN, scale: 0.05)
-                let b = [Float](repeating: 0, count: outN)
+                // AUTO-IMPROVEMENT: non-zero bias init helps break symmetry for small training datasets.
+                let b = try kernel.randFloats(count: outN, scale: 0.01)
                 let dp = DenseParams(inSize: inN, outSize: outN, w: w, b: b)
                 nodes.append(Node(name: name, kind: .dense, dense: dp))
 
