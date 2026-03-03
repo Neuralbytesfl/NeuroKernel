@@ -1,4 +1,9 @@
 import Foundation
+import Darwin
+
+// AUTO-IMPROVEMENT: force unbuffered output so piped runners can stream logs in real time.
+setbuf(stdout, nil)
+setbuf(stderr, nil)
 
 let kernel = Kernel()
 
