@@ -48,6 +48,28 @@ Full DSL manual lives at:
 
 - `Sources/NeuroKernel/MANUAL.md`
 
+## Web Console (Realtime)
+
+This repo includes a FastAPI + uvicorn web console for remote script submission,
+batch execution, and live output streaming.
+
+Setup:
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r webui/requirements.txt
+uvicorn webui.server:app --host 0.0.0.0 --port 8080
+```
+
+Open:
+
+- `http://localhost:8080`
+
+See details:
+
+- `webui/README.md`
+
 ## Training Data Format
 
 For `model train <name> csv "<file.csv>" ...`, each CSV row is:
