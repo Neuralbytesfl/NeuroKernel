@@ -169,21 +169,22 @@ enum Executor {
                 print("OK model loaded from \(cmd.args[2])")
 
             } else if sub == "train" {
-                // model train <name> csv "<file>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"]
+                // model train <name> csv "<file>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"] [grad_log_every <n>]
                 guard cmd.args.count >= 8 else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"] [grad_log_every <n>]")
                 }
                 let name = cmd.args[1]
                 guard cmd.args[2].lowercased() == "csv" else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"] [grad_log_every <n>]")
                 }
                 let csvPath = cmd.args[3]
                 guard cmd.args[4].lowercased() == "epochs", let epochs = Int(cmd.args[5]),
                       cmd.args[6].lowercased() == "lr", let lr = Float(cmd.args[7]) else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"] [grad_log_every <n>]")
                 }
                 var checkpointEvery: Int? = nil
                 var checkpointPrefix: String? = nil
+                var gradLogEvery: Int? = nil
                 var idx = 8
                 while idx < cmd.args.count {
                     let key = cmd.args[idx].lowercased()
@@ -199,6 +200,12 @@ enum Executor {
                         }
                         checkpointPrefix = cmd.args[idx + 1]
                         idx += 2
+                    } else if key == "grad_log_every" {
+                        guard idx + 1 < cmd.args.count, let n = Int(cmd.args[idx + 1]) else {
+                            throw NKError.parse("grad_log_every <n>")
+                        }
+                        gradLogEvery = n
+                        idx += 2
                     } else {
                         throw NKError.parse("unknown model train option: \(cmd.args[idx])")
                     }
@@ -210,7 +217,8 @@ enum Executor {
                     epochs: epochs,
                     lr: lr,
                     checkpointEvery: checkpointEvery,
-                    checkpointPrefix: checkpointPrefix
+                    checkpointPrefix: checkpointPrefix,
+                    gradLogEvery: gradLogEvery
                 )
                 print("OK \(summary)")
 

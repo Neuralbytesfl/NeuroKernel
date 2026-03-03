@@ -240,12 +240,16 @@ final class Kernel {
         epochs: Int,
         lr: Float,
         checkpointEvery: Int? = nil,
-        checkpointPrefix: String? = nil
+        checkpointPrefix: String? = nil,
+        gradLogEvery: Int? = nil
     ) throws -> String {
         guard epochs > 0 else { throw NKError.parse("epochs must be > 0") }
         guard lr > 0 else { throw NKError.parse("lr must be > 0") }
         if let every = checkpointEvery, every <= 0 {
             throw NKError.parse("checkpoint_every must be > 0")
+        }
+        if let every = gradLogEvery, every <= 0 {
+            throw NKError.parse("grad_log_every must be > 0")
         }
         if (checkpointEvery == nil) != (checkpointPrefix == nil) {
             throw NKError.parse("checkpoint_every and checkpoint_prefix must be set together")
@@ -268,6 +272,7 @@ final class Kernel {
         guard let last = chainNodes.last, last.kind == .softmax else {
             throw NKError.runtime("Training requires chain to end with softmax")
         }
+        let denseChainNames = chainNodes.filter { $0.kind == .dense }.map { $0.name }
 
         var avgLoss: Float = 0
         var avgAcc: Float = 0
@@ -292,6 +297,21 @@ final class Kernel {
             }
 
             let invN = 1.0 / Float(samples.count)
+            if let every = gradLogEvery, (epoch + 1) % every == 0 {
+                let firstName = denseChainNames.first
+                let lastName = denseChainNames.last
+                let firstNorm = firstName.flatMap { gradByDense[$0] }.map { l2Norm($0.w) } ?? 0
+                let lastNorm = lastName.flatMap { gradByDense[$0] }.map { l2Norm($0.w) } ?? 0
+                var totalSq: Float = 0
+                for g in gradByDense.values {
+                    totalSq += g.w.reduce(0) { $0 + ($1 * $1) }
+                    totalSq += g.b.reduce(0) { $0 + ($1 * $1) }
+                }
+                let totalNorm = sqrtf(totalSq)
+                // AUTO-IMPROVEMENT: gradient norm logging helps diagnose vanishing/exploding updates.
+                print(String(format: "GRAD epoch=%d total=%.6f first=%.6f last=%.6f", epoch + 1, totalNorm, firstNorm, lastNorm))
+            }
+
             for (nodeName, grad) in gradByDense {
                 guard let idx = nodeIndexByName[nodeName] else {
                     throw NKError.runtime("Missing dense node \(nodeName)")
@@ -493,6 +513,13 @@ final class Kernel {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(model)
         try data.write(to: url, options: .atomic)
+    }
+
+    private func l2Norm(_ x: [Float]) -> Float {
+        if x.isEmpty { return 0 }
+        var sum: Float = 0
+        for v in x { sum += v * v }
+        return sqrtf(sum)
     }
 
     // MARK: Contexts

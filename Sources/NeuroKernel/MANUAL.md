@@ -47,7 +47,7 @@ graph end
 
 model save <name> path "<file.json>"
 model load path "<file.json>" [as <name>]
-model train <name> csv "<file.csv>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"]
+model train <name> csv "<file.csv>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"] [grad_log_every <n>]
 
 Training from CSV (CPU SGD)
 - CSV format: each non-empty, non-comment row is `f1,f2,...,fN,label`.
@@ -56,6 +56,7 @@ Training from CSV (CPU SGD)
 - Training expects chain to end with `softmax` and uses softmax cross-entropy + SGD.
 - Output includes final `loss` and `acc`.
 - Optional checkpointing: when checkpoint options are set together, snapshots are saved as `<pathPrefix>_e<epoch>.json`.
+- Optional gradient diagnostics: `grad_log_every <n>` prints periodic gradient L2 norms (`total`, first dense layer, last dense layer).
 
 # Contexts
 ctx create <ctxName> model <modelName> device cpu|gpu
