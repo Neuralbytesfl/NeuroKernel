@@ -47,6 +47,14 @@ graph end
 
 model save <name> path "<file.json>"
 model load path "<file.json>" [as <name>]
+model train <name> csv "<file.csv>" epochs <n> lr <f>
+
+Training from CSV (CPU SGD)
+- CSV format: each non-empty, non-comment row is `f1,f2,...,fN,label`.
+- `label` is an integer class index in `0..<outputSize`.
+- `N` must match model `input`.
+- Training expects chain to end with `softmax` and uses softmax cross-entropy + SGD.
+- Output includes final `loss` and `acc`.
 
 # Contexts
 ctx create <ctxName> model <modelName> device cpu|gpu

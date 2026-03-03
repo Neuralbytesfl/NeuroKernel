@@ -50,4 +50,31 @@ enum CPUBackend {
         vDSP_vsmul(out.baseAddress!, 1, &inv, out.baseAddress!, 1, vDSP_Length(out.count))
         return out
     }
+
+    // AUTO-IMPROVEMENT: training path uses array-based ops for forward/backward passes.
+    static func denseArray(input: [Float], params: DenseParams) -> [Float] {
+        precondition(input.count == params.inSize)
+        var out = [Float](repeating: 0, count: params.outSize)
+        for j in 0..<params.outSize {
+            var acc = params.b[j]
+            let base = j * params.inSize
+            for i in 0..<params.inSize {
+                acc += params.w[base + i] * input[i]
+            }
+            out[j] = acc
+        }
+        return out
+    }
+
+    static func reluArray(_ x: [Float]) -> [Float] {
+        x.map { max(0, $0) }
+    }
+
+    static func softmaxArray(_ x: [Float]) -> [Float] {
+        guard let mx = x.max() else { return [] }
+        let ex = x.map { expf($0 - mx) }
+        let sum = max(ex.reduce(0, +), 1e-20)
+        let inv: Float = 1.0 / sum
+        return ex.map { $0 * inv }
+    }
 }

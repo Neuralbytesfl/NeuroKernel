@@ -233,6 +233,196 @@ final class Kernel {
         return m
     }
 
+    // AUTO-IMPROVEMENT: add in-kernel supervised SGD training from CSV for dense/relu/softmax graphs.
+    func modelTrainCSV(name: String, path: String, epochs: Int, lr: Float) throws -> String {
+        guard epochs > 0 else { throw NKError.parse("epochs must be > 0") }
+        guard lr > 0 else { throw NKError.parse("lr must be > 0") }
+
+        var model = try getModel(name)
+        let samples = try loadLabeledCSV(path: path, inputSize: model.inputSize)
+        if samples.isEmpty {
+            throw NKError.runtime("No training rows in \(path)")
+        }
+
+        let nodeIndexByName = Dictionary(uniqueKeysWithValues: model.nodes.enumerated().map { ($1.name, $0) })
+        let chainNodes: [Node] = try model.chain.map { nodeName in
+            guard let idx = nodeIndexByName[nodeName] else {
+                throw NKError.runtime("Missing node \(nodeName)")
+            }
+            return model.nodes[idx]
+        }
+
+        guard let last = chainNodes.last, last.kind == .softmax else {
+            throw NKError.runtime("Training requires chain to end with softmax")
+        }
+
+        var avgLoss: Float = 0
+        var avgAcc: Float = 0
+
+        for _ in 0..<epochs {
+            var epochLoss: Float = 0
+            var correct = 0
+
+            for sample in samples {
+                let (probs, preByName) = try trainForward(model: model, input: sample.input)
+                guard sample.label >= 0, sample.label < probs.count else {
+                    throw NKError.runtime("Label \(sample.label) out of range 0..<\(probs.count)")
+                }
+
+                let p = max(probs[sample.label], 1e-9)
+                epochLoss += -logf(p)
+                if argmax(probs) == sample.label {
+                    correct += 1
+                }
+
+                var delta = probs
+                delta[sample.label] -= 1.0
+                try trainBackwardUpdate(model: &model, deltaOut: delta, preByName: preByName, lr: lr)
+            }
+
+            avgLoss = epochLoss / Float(samples.count)
+            avgAcc = Float(correct) / Float(samples.count)
+        }
+
+        lock.lock()
+        models[name] = model
+        // invalidate cached GPU graphs that reference this model so they rebuild with updated weights
+        for (_, ctx) in contexts where ctx.modelName == name {
+            ctx.gpuRunner = nil
+        }
+        lock.unlock()
+
+        return String(format: "TRAIN model=%@ rows=%d epochs=%d lr=%.6f loss=%.6f acc=%.4f", name, samples.count, epochs, lr, avgLoss, avgAcc)
+    }
+
+    private struct LabeledRow {
+        var input: [Float]
+        var label: Int
+    }
+
+    private func loadLabeledCSV(path: String, inputSize: Int) throws -> [LabeledRow] {
+        let text = try String(contentsOfFile: path, encoding: .utf8)
+        var out: [LabeledRow] = []
+
+        for raw in text.split(separator: "\n", omittingEmptySubsequences: false) {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.isEmpty || line.hasPrefix("#") {
+                continue
+            }
+            let parts = line.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count != inputSize + 1 {
+                throw NKError.runtime("CSV row must have \(inputSize + 1) columns (features + label): \(line)")
+            }
+            let featureCSV = parts.dropLast().joined(separator: ",")
+            let input = try Script.parseCSV(featureCSV)
+            guard let label = Int(parts.last ?? "") else {
+                throw NKError.runtime("CSV label must be integer class index: \(line)")
+            }
+            out.append(LabeledRow(input: input, label: label))
+        }
+        return out
+    }
+
+    private func trainForward(model: ModelGraph, input: [Float]) throws -> (probs: [Float], preByName: [String: [Float]]) {
+        guard input.count == model.inputSize else {
+            throw NKError.runtime("Input size mismatch: got \(input.count) expected \(model.inputSize)")
+        }
+        let nodeIndexByName = Dictionary(uniqueKeysWithValues: model.nodes.enumerated().map { ($1.name, $0) })
+        var x = input
+        var preByName: [String: [Float]] = [:]
+
+        for nodeName in model.chain {
+            guard let idx = nodeIndexByName[nodeName] else {
+                throw NKError.runtime("Missing node \(nodeName)")
+            }
+            let node = model.nodes[idx]
+            preByName[node.name] = x
+            switch node.kind {
+            case .input:
+                break
+            case .dense:
+                guard let dp = node.dense else { throw NKError.runtime("Dense missing params \(node.name)") }
+                x = CPUBackend.denseArray(input: x, params: dp)
+            case .relu:
+                x = CPUBackend.reluArray(x)
+            case .softmax:
+                x = CPUBackend.softmaxArray(x)
+            }
+        }
+
+        return (x, preByName)
+    }
+
+    private func trainBackwardUpdate(model: inout ModelGraph, deltaOut: [Float], preByName: [String: [Float]], lr: Float) throws {
+        let nodeIndexByName = Dictionary(uniqueKeysWithValues: model.nodes.enumerated().map { ($1.name, $0) })
+        var delta = deltaOut
+
+        for nodeName in model.chain.reversed() {
+            guard let idx = nodeIndexByName[nodeName] else {
+                throw NKError.runtime("Missing node \(nodeName)")
+            }
+            var node = model.nodes[idx]
+
+            switch node.kind {
+            case .input:
+                continue
+
+            case .softmax:
+                // softmax+cross-entropy gradient is already folded into deltaOut.
+                continue
+
+            case .relu:
+                guard let pre = preByName[node.name] else {
+                    throw NKError.runtime("Backward missing pre-activation for \(node.name)")
+                }
+                guard pre.count == delta.count else {
+                    throw NKError.runtime("Relu grad shape mismatch at \(node.name)")
+                }
+                for i in 0..<delta.count where pre[i] <= 0 {
+                    delta[i] = 0
+                }
+
+            case .dense:
+                guard var dp = node.dense else { throw NKError.runtime("Dense missing params \(node.name)") }
+                guard let pre = preByName[node.name] else {
+                    throw NKError.runtime("Backward missing dense input for \(node.name)")
+                }
+                guard pre.count == dp.inSize, delta.count == dp.outSize else {
+                    throw NKError.runtime("Dense grad shape mismatch at \(node.name)")
+                }
+
+                let oldW = dp.w
+                var deltaPrev = [Float](repeating: 0, count: dp.inSize)
+
+                for j in 0..<dp.outSize {
+                    let d = delta[j]
+                    let row = j * dp.inSize
+                    for i in 0..<dp.inSize {
+                        let wi = row + i
+                        deltaPrev[i] += oldW[wi] * d
+                        dp.w[wi] = oldW[wi] - (lr * d * pre[i])
+                    }
+                    dp.b[j] -= lr * d
+                }
+
+                node.dense = dp
+                model.nodes[idx] = node
+                delta = deltaPrev
+            }
+        }
+    }
+
+    private func argmax(_ x: [Float]) -> Int {
+        guard !x.isEmpty else { return 0 }
+        var bestI = 0
+        var bestV = x[0]
+        for i in 1..<x.count where x[i] > bestV {
+            bestV = x[i]
+            bestI = i
+        }
+        return bestI
+    }
+
     // MARK: Contexts
 
     func ctxCreate(name: String, model: String, device: DeviceKind) throws {

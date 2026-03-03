@@ -121,7 +121,7 @@ enum Executor {
             }
 
         case "model":
-            guard cmd.args.count >= 1 else { throw NKError.parse("model create|save|load ...") }
+            guard cmd.args.count >= 1 else { throw NKError.parse("model create|save|load|train ...") }
             let sub = cmd.args[0].lowercased()
 
             if sub == "create" {
@@ -168,8 +168,25 @@ enum Executor {
                 try kernel.modelLoad(path: cmd.args[2], as: asName)
                 print("OK model loaded from \(cmd.args[2])")
 
+            } else if sub == "train" {
+                // model train <name> csv "<file>" epochs <n> lr <f>
+                guard cmd.args.count >= 8 else {
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                }
+                let name = cmd.args[1]
+                guard cmd.args[2].lowercased() == "csv" else {
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                }
+                let csvPath = cmd.args[3]
+                guard cmd.args[4].lowercased() == "epochs", let epochs = Int(cmd.args[5]),
+                      cmd.args[6].lowercased() == "lr", let lr = Float(cmd.args[7]) else {
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                }
+                let summary = try kernel.modelTrainCSV(name: name, path: csvPath, epochs: epochs, lr: lr)
+                print("OK \(summary)")
+
             } else {
-                throw NKError.parse("model create|save|load ...")
+                throw NKError.parse("model create|save|load|train ...")
             }
 
         case "ctx":

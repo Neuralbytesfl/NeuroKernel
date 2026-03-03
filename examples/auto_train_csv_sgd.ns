@@ -1,0 +1,18 @@
+rng seed_deterministic hex aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa
+rng show
+
+model create train_m graph begin
+  input 2
+  dense d1 in 2 out 4
+  relu r1
+  dense d2 in 4 out 2
+  softmax s1
+  chain d1 r1 d2 s1
+graph end
+
+model train train_m csv "examples/auto_train_xor.csv" epochs 300 lr 0.2
+
+ctx create train_ctx model train_m device cpu
+worker spawn train_w ctx train_ctx interval_ms 80 priority normal source input 0,1 sink print
+sleep 220
+worker stopall
