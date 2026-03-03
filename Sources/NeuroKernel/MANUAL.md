@@ -26,6 +26,10 @@ quit
 
 `stats` includes per-worker `steps`, `errs`, `watchdog` (`ok` or `stalled(<ms>)`), and `last_err` when failures occur.
 
+Startup monitor
+- REPL is quiet by default (no periodic stats lines).
+- To enable periodic stats printing, start with env var `NEUROK_MONITOR_MS=<n>` (for example `NEUROK_MONITOR_MS=900 ./neurok`).
+
 # RNG
 rng seed_secure
 rng seed_deterministic hex <64-hex-bytes>

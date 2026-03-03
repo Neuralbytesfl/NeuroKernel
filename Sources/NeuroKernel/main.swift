@@ -1,7 +1,13 @@
 import Foundation
 
 let kernel = Kernel()
-kernel.startMonitor(everyMs: 900)
+
+// AUTO-IMPROVEMENT: keep interactive REPL quiet by default; enable monitor explicitly via env.
+if let msRaw = ProcessInfo.processInfo.environment["NEUROK_MONITOR_MS"],
+   let ms = Int(msRaw),
+   ms > 0 {
+    kernel.startMonitor(everyMs: ms)
+}
 
 func runFile(_ path: String) -> Bool {
     do {
