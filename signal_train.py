@@ -121,6 +121,7 @@ def write_csv(path: str, rows: List[Tuple[List[float], int]]) -> None:
 def make_ns_script(
     csv_path: str,
     out_ns_path: str,
+    model_out_path: str,
     seed_hex: str,
     input_size: int,
     hidden: List[int],
@@ -167,6 +168,8 @@ def make_ns_script(
     lines.append(
         f'model train sig_m csv "{csv_path}" epochs {epochs} lr {lr} grad_log_every {grad_log_every}'
     )
+    # AUTO-IMPROVEMENT: persist trained weights so learning is not lost after process exit.
+    lines.append(f'model save sig_m path "{model_out_path}"')
     lines.append("")
     lines.append(f"ctx create sig_ctx model sig_m device {device}")
 
@@ -308,6 +311,7 @@ def main() -> None:
     os.makedirs(args.out_dir, exist_ok=True)
     csv_path = os.path.join(args.out_dir, "signal_dataset.csv")
     ns_path = os.path.join(args.out_dir, "signal_train.ns")
+    model_json_path = os.path.join(args.out_dir, "signal_model_trained.json")
 
     print(C.MAGENTA + C.BOLD + "\n[1] Generating signal..." + C.RESET)
     series = gen_signal(
@@ -344,6 +348,7 @@ def main() -> None:
     make_ns_script(
         csv_path=csv_path,
         out_ns_path=ns_path,
+        model_out_path=model_json_path,
         seed_hex=seed_hex,
         input_size=args.window,
         hidden=hidden,
@@ -356,6 +361,11 @@ def main() -> None:
     print(C.MAGENTA + C.BOLD + "\n[5] Running NeuroKernel (realtime output)..." + C.RESET)
     rc = run_neurok(args.neurok, ns_path)
     if rc == 0:
+        if os.path.exists(model_json_path):
+            sz = os.path.getsize(model_json_path)
+            print(C.GREEN + f"Saved trained model: {model_json_path} ({sz} bytes)" + C.RESET)
+        else:
+            print(C.YELLOW + f"WARNING: expected trained model not found: {model_json_path}" + C.RESET)
         print(C.GREEN + C.BOLD + "\nDONE (rc=0)\n" + C.RESET)
     else:
         print(C.RED + C.BOLD + f"\nFAILED (rc={rc})\n" + C.RESET)
