@@ -765,6 +765,9 @@ final class Kernel {
         let ts = timesliceMs
         let rngMode = (detRng != nil) ? "det" : "secure"
         let chanNames = Array(channels.keys).sorted()
+        let chanSnapshot: [String: (cap: Int, count: Int)] = Dictionary(
+            uniqueKeysWithValues: channels.map { (name, ch) in (name, ch.info()) }
+        )
         lock.unlock()
 
         func mb(_ b: UInt64) -> String { String(format: "%.1f", Double(b) / (1024*1024)) }
@@ -784,7 +787,20 @@ final class Kernel {
             let sinceSuccessMs = Double(nowNs &- refNs) / 1_000_000.0
             let watchdogMs = max(Double(spec.intervalMs) * 3.0, Double(spec.intervalMs) + 250.0)
             if sinceSuccessMs >= watchdogMs {
-                wline += " watchdog=stalled(\(Int(sinceSuccessMs))ms)"
+                // AUTO-IMPROVEMENT: classify channel-blocked stalls for more accurate contention diagnostics.
+                let stallMs = Int(sinceSuccessMs)
+                var watchdog = "stalled(\(stallMs)ms)"
+
+                if case .channel(let srcChan) = spec.source,
+                   let srcInfo = chanSnapshot[srcChan],
+                   srcInfo.count == 0 {
+                    watchdog = "blocked_input_empty(\(stallMs)ms)"
+                } else if case .channel(let sinkChan) = spec.sink,
+                          let sinkInfo = chanSnapshot[sinkChan],
+                          sinkInfo.count >= sinkInfo.cap {
+                    watchdog = "blocked_output_full(\(stallMs)ms)"
+                }
+                wline += " watchdog=\(watchdog)"
             } else {
                 wline += " watchdog=ok"
             }

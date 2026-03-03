@@ -25,7 +25,7 @@ stats
 sleep <ms>
 quit
 
-`stats` includes per-worker `steps`, `errs`, `watchdog` (`ok` or `stalled(<ms>)`), and `last_err` when failures occur.
+`stats` includes per-worker `steps`, `errs`, `watchdog`, and `last_err` when failures occur.
 
 Startup monitor
 - REPL is quiet by default (no periodic stats lines).
@@ -92,6 +92,8 @@ worker stopall
 Worker watchdog behavior
 - `watchdog=ok`: worker has a recent successful inference.
 - `watchdog=stalled(<ms>)`: time since the last successful inference exceeded the stall threshold.
+- `watchdog=blocked_input_empty(<ms>)`: channel-source worker is stalled waiting for input on an empty source channel.
+- `watchdog=blocked_output_full(<ms>)`: channel-sink worker is stalled waiting for space on a full sink channel.
 - Stall threshold is `max(interval_ms * 3, interval_ms + 250)`.
 - Workers blocked on empty input channels or repeatedly failing inference will eventually show as stalled.
 
