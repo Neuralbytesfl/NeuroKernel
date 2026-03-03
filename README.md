@@ -84,3 +84,7 @@ f1,f2,...,fN,label
 ## License
 
 MIT. See [LICENSE](LICENSE).
+
+## Deployment Profiles
+
+- `profiles/amd-epyc-avx2/`: dedicated EPYC/AVX2 architecture runbook, stress template, and environment scripts.
