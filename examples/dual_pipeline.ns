@@ -1,0 +1,50 @@
+# -------------------------------
+# Advanced NeuroKernel Demo
+# Dual model pipelines + routing
+# -------------------------------
+
+rng seed_deterministic hex 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+rng show
+
+limit workers 6
+limit rss_mb 1024
+sched timeslice_ms 1
+
+chan create inputA cap 128
+chan create inputB cap 128
+chan create mid cap 128
+chan create output cap 128
+
+model create modelA graph begin
+  input 8
+  dense d1 in 8 out 32
+  relu r1
+  dense d2 in 32 out 32
+  relu r2
+  dense d3 in 32 out 16
+  chain d1 r1 d2 r2 d3
+graph end
+
+model create modelB graph begin
+  input 16
+  dense c1 in 16 out 16
+  relu cr1
+  dense c2 in 16 out 4
+  softmax sm1
+  chain c1 cr1 c2 sm1
+graph end
+
+ctx create ctxA model modelA device gpu
+ctx create ctxB model modelB device gpu
+
+worker spawn generator ctx ctxA interval_ms 30 priority high \
+  source input 0.2,0.1,0.0,0.3,0.4,0.5,0.6,0.7 \
+  sink chan mid
+worker spawn stageB ctx ctxB interval_ms 20 priority normal source chan mid sink chan output
+
+# Let workers run before final snapshot in runonly mode
+sleep 1200
+
+chan pop output
+
+stats

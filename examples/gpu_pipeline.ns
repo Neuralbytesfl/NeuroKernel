@@ -1,0 +1,24 @@
+# RNG: secure by default. Use deterministic for reproducible init:
+# rng seed_deterministic hex 001122... (64 hex bytes)
+
+chan create in cap 64
+chan create out cap 64
+
+model create m1 graph begin
+  input 4
+  dense d1 in 4 out 16
+  relu r1
+  dense d2 in 16 out 3
+  softmax s1
+  chain d1 r1 d2 s1
+graph end
+
+ctx create c1 model m1 device gpu
+
+worker spawn wRoute ctx c1 interval_ms 50 priority high source chan in sink chan out
+worker spawn wPrint ctx c1 interval_ms 200 priority low source input 0.1,0.2,0.3,0.4 sink print
+
+chan push in 1,0,0,0
+chan push in 0,1,0,0
+chan pop out
+stats
