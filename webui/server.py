@@ -77,7 +77,14 @@ async def run_one_script(
     dataset_text: Optional[str] = None,
     dataset_name: str = "dataset.csv",
 ) -> int:
-    if dataset_text is not None and dataset_text.strip():
+    needs_dataset = "{{DATASET_PATH}}" in script_text
+    has_dataset = dataset_text is not None and dataset_text.strip() != ""
+
+    if needs_dataset and not has_dataset:
+        await job.add_line("[error] script uses {{DATASET_PATH}} but dataset textarea is empty")
+        return 2
+
+    if has_dataset:
         ds_tmp = tempfile.NamedTemporaryFile(
             mode="w",
             suffix=f"_{os.path.basename(dataset_name)}",
