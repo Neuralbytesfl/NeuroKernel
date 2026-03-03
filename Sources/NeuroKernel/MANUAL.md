@@ -47,7 +47,7 @@ graph end
 
 model save <name> path "<file.json>"
 model load path "<file.json>" [as <name>]
-model train <name> csv "<file.csv>" epochs <n> lr <f>
+model train <name> csv "<file.csv>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"]
 
 Training from CSV (CPU SGD)
 - CSV format: each non-empty, non-comment row is `f1,f2,...,fN,label`.
@@ -55,6 +55,7 @@ Training from CSV (CPU SGD)
 - `N` must match model `input`.
 - Training expects chain to end with `softmax` and uses softmax cross-entropy + SGD.
 - Output includes final `loss` and `acc`.
+- Optional checkpointing: when checkpoint options are set together, snapshots are saved as `<pathPrefix>_e<epoch>.json`.
 
 # Contexts
 ctx create <ctxName> model <modelName> device cpu|gpu

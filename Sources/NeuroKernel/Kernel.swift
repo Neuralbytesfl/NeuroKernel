@@ -234,9 +234,22 @@ final class Kernel {
     }
 
     // AUTO-IMPROVEMENT: add in-kernel supervised SGD training from CSV for dense/relu/softmax graphs.
-    func modelTrainCSV(name: String, path: String, epochs: Int, lr: Float) throws -> String {
+    func modelTrainCSV(
+        name: String,
+        path: String,
+        epochs: Int,
+        lr: Float,
+        checkpointEvery: Int? = nil,
+        checkpointPrefix: String? = nil
+    ) throws -> String {
         guard epochs > 0 else { throw NKError.parse("epochs must be > 0") }
         guard lr > 0 else { throw NKError.parse("lr must be > 0") }
+        if let every = checkpointEvery, every <= 0 {
+            throw NKError.parse("checkpoint_every must be > 0")
+        }
+        if (checkpointEvery == nil) != (checkpointPrefix == nil) {
+            throw NKError.parse("checkpoint_every and checkpoint_prefix must be set together")
+        }
 
         var model = try getModel(name)
         let samples = try loadLabeledCSV(path: path, inputSize: model.inputSize)
@@ -258,8 +271,9 @@ final class Kernel {
 
         var avgLoss: Float = 0
         var avgAcc: Float = 0
+        var checkpointsSaved = 0
 
-        for _ in 0..<epochs {
+        for epoch in 0..<epochs {
             var gradByDense: [String: DenseGrad] = [:]
             for node in model.nodes where node.kind == .dense {
                 guard let dp = node.dense else { continue }
@@ -307,6 +321,13 @@ final class Kernel {
 
             avgLoss = epochLoss / Float(samples.count)
             avgAcc = Float(correct) / Float(samples.count)
+
+            if let every = checkpointEvery, let prefix = checkpointPrefix, (epoch + 1) % every == 0 {
+                // AUTO-IMPROVEMENT: periodic checkpointing allows long training runs to resume/review snapshots.
+                let checkpointPath = "\(prefix)_e\(epoch + 1).json"
+                try writeModelCheckpoint(model, path: checkpointPath)
+                checkpointsSaved += 1
+            }
         }
 
         lock.lock()
@@ -317,7 +338,19 @@ final class Kernel {
         }
         lock.unlock()
 
-        return String(format: "TRAIN model=%@ rows=%d epochs=%d lr=%.6f loss=%.6f acc=%.4f", name, samples.count, epochs, lr, avgLoss, avgAcc)
+        var summary = String(
+            format: "TRAIN model=%@ rows=%d epochs=%d lr=%.6f loss=%.6f acc=%.4f",
+            name,
+            samples.count,
+            epochs,
+            lr,
+            avgLoss,
+            avgAcc
+        )
+        if let every = checkpointEvery, let prefix = checkpointPrefix {
+            summary += " checkpoints=\(checkpointsSaved) every=\(every) prefix=\(prefix)"
+        }
+        return summary
     }
 
     private struct LabeledRow {
@@ -452,6 +485,14 @@ final class Kernel {
             bestI = i
         }
         return bestI
+    }
+
+    private func writeModelCheckpoint(_ model: ModelGraph, path: String) throws {
+        let url = URL(fileURLWithPath: path)
+        let dir = url.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let data = try JSONEncoder().encode(model)
+        try data.write(to: url, options: .atomic)
     }
 
     // MARK: Contexts

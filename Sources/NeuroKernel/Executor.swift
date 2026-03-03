@@ -169,20 +169,49 @@ enum Executor {
                 print("OK model loaded from \(cmd.args[2])")
 
             } else if sub == "train" {
-                // model train <name> csv "<file>" epochs <n> lr <f>
+                // model train <name> csv "<file>" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix "<pathPrefix>"]
                 guard cmd.args.count >= 8 else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
                 }
                 let name = cmd.args[1]
                 guard cmd.args[2].lowercased() == "csv" else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
                 }
                 let csvPath = cmd.args[3]
                 guard cmd.args[4].lowercased() == "epochs", let epochs = Int(cmd.args[5]),
                       cmd.args[6].lowercased() == "lr", let lr = Float(cmd.args[7]) else {
-                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f>")
+                    throw NKError.parse("model train <name> csv \"file\" epochs <n> lr <f> [checkpoint_every <n> checkpoint_prefix \"prefix\"]")
                 }
-                let summary = try kernel.modelTrainCSV(name: name, path: csvPath, epochs: epochs, lr: lr)
+                var checkpointEvery: Int? = nil
+                var checkpointPrefix: String? = nil
+                var idx = 8
+                while idx < cmd.args.count {
+                    let key = cmd.args[idx].lowercased()
+                    if key == "checkpoint_every" {
+                        guard idx + 1 < cmd.args.count, let n = Int(cmd.args[idx + 1]) else {
+                            throw NKError.parse("checkpoint_every <n>")
+                        }
+                        checkpointEvery = n
+                        idx += 2
+                    } else if key == "checkpoint_prefix" {
+                        guard idx + 1 < cmd.args.count else {
+                            throw NKError.parse("checkpoint_prefix \"prefix\"")
+                        }
+                        checkpointPrefix = cmd.args[idx + 1]
+                        idx += 2
+                    } else {
+                        throw NKError.parse("unknown model train option: \(cmd.args[idx])")
+                    }
+                }
+
+                let summary = try kernel.modelTrainCSV(
+                    name: name,
+                    path: csvPath,
+                    epochs: epochs,
+                    lr: lr,
+                    checkpointEvery: checkpointEvery,
+                    checkpointPrefix: checkpointPrefix
+                )
                 print("OK \(summary)")
 
             } else {
