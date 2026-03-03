@@ -25,7 +25,8 @@ stats
 sleep <ms>
 quit
 
-`stats` includes per-worker `steps`, `errs`, `watchdog`, and `last_err` when failures occur.
+`stats` includes per-worker `steps`, `avg_sps` (average steps/sec since worker start), `errs`, `watchdog`, and `last_err` when failures occur.
+Header also includes `workers_avg_sps` as aggregate throughput across workers.
 
 Startup monitor
 - REPL is quiet by default (no periodic stats lines).

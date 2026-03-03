@@ -789,16 +789,27 @@ final class Kernel {
         lock.unlock()
 
         func mb(_ b: UInt64) -> String { String(format: "%.1f", Double(b) / (1024*1024)) }
+        func uptimeSec(_ wi: WorkerInfo) -> Double {
+            let ageNs = nowNs &- wi.createdAtMonotonicNs
+            return max(Double(ageNs) / 1_000_000_000.0, 1e-6)
+        }
 
         var line = "=== neurok === rss=\(mb(rss))MB threads=\(thr) models=\(m) ctx=\(c) workers=\(w.count) chans=\(chanNames.count) rng=\(rngMode) timeslice_ms=\(ts)"
         if let x = lim.workersLimit { line += " workers_limit=\(x)" }
         if let x = lim.rssLimitMB { line += " rss_limit=\(x)MB" }
+        if !w.isEmpty {
+            let totalSteps = w.reduce(0.0) { $0 + Double($1.steps) }
+            let totalUptime = w.reduce(0.0) { $0 + uptimeSec($1) }
+            let aggSps = (totalUptime > 0) ? (totalSteps / totalUptime) : 0
+            line += " workers_avg_sps=\(String(format: "%.2f", aggSps))"
+        }
         print(line)
 
         for wi in w {
             let spec = wi.spec
             let ctxInfo = (try? ctxInfo(spec.ctxName)) ?? "ctx=\(spec.ctxName)"
-            var wline = "  [worker \(spec.name)] prio=\(spec.priority.rawValue) interval=\(spec.intervalMs)ms steps=\(wi.steps) errs=\(wi.errors) last=\(String(format: "%.2f", wi.lastLatencyMs))ms \(ctxInfo)"
+            let avgSps = Double(wi.steps) / uptimeSec(wi)
+            var wline = "  [worker \(spec.name)] prio=\(spec.priority.rawValue) interval=\(spec.intervalMs)ms steps=\(wi.steps) avg_sps=\(String(format: "%.2f", avgSps)) errs=\(wi.errors) last=\(String(format: "%.2f", wi.lastLatencyMs))ms \(ctxInfo)"
 
             // AUTO-IMPROVEMENT: expose watchdog stall status from last successful progress.
             let refNs = wi.lastSuccessAtMonotonicNs ?? wi.createdAtMonotonicNs

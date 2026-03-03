@@ -1,0 +1,27 @@
+rng seed_deterministic hex 7777777777777777777777777777777777777777777777777777777777777777
+rng show
+
+sched timeslice_ms 1
+
+model create sps_m graph begin
+  input 2
+  dense d1 in 2 out 16
+  relu r1
+  dense d2 in 16 out 2
+  softmax s1
+  chain d1 r1 d2 s1
+graph end
+
+ctx create sps_ctx model sps_m device cpu
+
+chan create sps_in cap 8
+chan create sps_out cap 8
+
+worker spawn p0 ctx sps_ctx interval_ms 2 priority normal source input 0.2,0.8 sink chan sps_in
+worker spawn p1 ctx sps_ctx interval_ms 2 priority normal source input 0.8,0.2 sink chan sps_in
+worker spawn c0 ctx sps_ctx interval_ms 2 priority high source chan sps_in sink chan sps_out
+worker spawn c1 ctx sps_ctx interval_ms 2 priority high source chan sps_in sink chan sps_out
+
+sleep 800
+stats
+worker stopall
