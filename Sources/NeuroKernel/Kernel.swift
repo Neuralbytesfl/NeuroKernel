@@ -96,7 +96,25 @@ final class Kernel {
 
     func setWorkersLimit(_ n: Int) { lock.lock(); limits.workersLimit = n; lock.unlock() }
     func setRSSLimitMB(_ n: UInt64) { lock.lock(); limits.rssLimitMB = n; lock.unlock() }
+    func clearWorkersLimit() { lock.lock(); limits.workersLimit = nil; lock.unlock() }
+    func clearRSSLimitMB() { lock.lock(); limits.rssLimitMB = nil; lock.unlock() }
     func setTimesliceMs(_ n: Int) { lock.lock(); timesliceMs = max(1, n); lock.unlock() }
+
+    // AUTO-IMPROVEMENT: host-aware adaptive limits reduce manual tuning for stress scripts.
+    func setWorkersLimitAuto() -> Int {
+        let cpus = OSStats.logicalCPUCount()
+        let autoWorkers = max(4, cpus * 3)
+        setWorkersLimit(autoWorkers)
+        return autoWorkers
+    }
+
+    func setRSSLimitMBAuto() -> UInt64 {
+        let totalMB = OSStats.totalMemoryBytes() / (1024 * 1024)
+        // Conservative cap: 25% of physical RAM, bounded to keep kernels predictable.
+        let autoRSS = min(max(totalMB / 4, 256), 8192)
+        setRSSLimitMB(autoRSS)
+        return autoRSS
+    }
 
     // MARK: RNG
 

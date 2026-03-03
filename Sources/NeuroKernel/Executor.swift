@@ -48,18 +48,36 @@ enum Executor {
             }
 
         case "limit":
-            guard cmd.args.count >= 2 else { throw NKError.parse("limit workers <n> | limit rss_mb <n>") }
+            guard cmd.args.count >= 2 else { throw NKError.parse("limit workers <n|auto|off> | limit rss_mb <n|auto|off>") }
             let which = cmd.args[0].lowercased()
             if which == "workers" {
-                guard let n = Int(cmd.args[1]) else { throw NKError.parse("bad workers") }
-                kernel.setWorkersLimit(n)
-                print("OK limit workers \(n)")
+                let val = cmd.args[1].lowercased()
+                if val == "auto" {
+                    let n = kernel.setWorkersLimitAuto()
+                    print("OK limit workers auto=\(n)")
+                } else if val == "off" {
+                    kernel.clearWorkersLimit()
+                    print("OK limit workers off")
+                } else {
+                    guard let n = Int(cmd.args[1]) else { throw NKError.parse("bad workers") }
+                    kernel.setWorkersLimit(n)
+                    print("OK limit workers \(n)")
+                }
             } else if which == "rss_mb" {
-                guard let n = UInt64(cmd.args[1]) else { throw NKError.parse("bad rss_mb") }
-                kernel.setRSSLimitMB(n)
-                print("OK limit rss_mb \(n)")
+                let val = cmd.args[1].lowercased()
+                if val == "auto" {
+                    let n = kernel.setRSSLimitMBAuto()
+                    print("OK limit rss_mb auto=\(n)")
+                } else if val == "off" {
+                    kernel.clearRSSLimitMB()
+                    print("OK limit rss_mb off")
+                } else {
+                    guard let n = UInt64(cmd.args[1]) else { throw NKError.parse("bad rss_mb") }
+                    kernel.setRSSLimitMB(n)
+                    print("OK limit rss_mb \(n)")
+                }
             } else {
-                throw NKError.parse("limit workers <n> | limit rss_mb <n>")
+                throw NKError.parse("limit workers <n|auto|off> | limit rss_mb <n|auto|off>")
             }
 
         case "rng":

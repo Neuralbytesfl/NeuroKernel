@@ -98,9 +98,14 @@ Worker watchdog behavior
 - Workers blocked on empty input channels or repeatedly failing inference will eventually show as stalled.
 
 # Scheduler policies
-limit workers <n>
-limit rss_mb <n>
+limit workers <n|auto|off>
+limit rss_mb <n|auto|off>
 sched timeslice_ms <n>
+
+Adaptive limits
+- `limit workers auto`: sets worker limit from host CPU count (about `3 x logical CPUs`, minimum 4).
+- `limit rss_mb auto`: sets RSS guardrail from host memory (about 25%, min 256MB, max 8192MB).
+- `off` clears the corresponding limit.
 
 Example
 chan create in cap 64

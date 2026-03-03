@@ -27,4 +27,12 @@ enum OSStats {
         _ = vm_deallocate(mach_task_self_, vm_address_t(bitPattern: threads), byteCount)
         return threadCount
     }
+
+    static func logicalCPUCount() -> Int {
+        max(1, ProcessInfo.processInfo.activeProcessorCount)
+    }
+
+    static func totalMemoryBytes() -> UInt64 {
+        ProcessInfo.processInfo.physicalMemory
+    }
 }

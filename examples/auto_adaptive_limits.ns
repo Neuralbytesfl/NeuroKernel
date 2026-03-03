@@ -1,0 +1,24 @@
+rng seed_deterministic hex 6666666666666666666666666666666666666666666666666666666666666666
+rng show
+
+limit workers auto
+limit rss_mb auto
+sched timeslice_ms 2
+
+model create lim_m graph begin
+  input 2
+  dense d1 in 2 out 4
+  relu r1
+  dense d2 in 4 out 2
+  softmax s1
+  chain d1 r1 d2 s1
+graph end
+
+ctx create lim_ctx model lim_m device cpu
+worker spawn lim_w ctx lim_ctx interval_ms 40 priority normal source input 0.3,0.7 sink print
+sleep 220
+stats
+worker stopall
+
+limit workers off
+limit rss_mb off
