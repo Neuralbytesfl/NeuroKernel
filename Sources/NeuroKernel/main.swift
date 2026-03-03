@@ -20,11 +20,48 @@ func runFile(_ path: String) -> Bool {
 }
 
 func repl() {
+    func isGraphBlockBegin(_ line: String) -> Bool {
+        guard let cmd = try? Script.parseOneLine(line).first else { return false }
+        return cmd.op == "model"
+            && cmd.args.count >= 4
+            && cmd.args[0].lowercased() == "create"
+            && cmd.args[2].lowercased() == "graph"
+            && cmd.args[3].lowercased() == "begin"
+    }
+
+    func isGraphBlockEnd(_ line: String) -> Bool {
+        guard let cmd = try? Script.parseOneLine(line).first else { return false }
+        return cmd.op == "graph"
+            && cmd.args.count >= 1
+            && cmd.args[0].lowercased() == "end"
+    }
+
     print("neurok — Narrow Neural Microkernel (Swift + MPSGraph). Type 'help'.")
+    var pendingGraphLines: [String]? = nil
+
     while true {
-        print("> ", terminator: "")
+        print(pendingGraphLines == nil ? "> " : "graph> ", terminator: "")
         guard let line = readLine() else { break }
         do {
+            if var block = pendingGraphLines {
+                block.append(line)
+                if isGraphBlockEnd(line) {
+                    pendingGraphLines = nil
+                    let cmds = try Script.parseText(block.joined(separator: "\n"))
+                    let cont = try Executor.run(kernel: kernel, cmds: cmds)
+                    if !cont { return }
+                } else {
+                    pendingGraphLines = block
+                }
+                continue
+            }
+
+            if isGraphBlockBegin(line) {
+                // AUTO-IMPROVEMENT: allow multiline graph blocks to be pasted directly in REPL.
+                pendingGraphLines = [line]
+                continue
+            }
+
             let cmds = try Script.parseOneLine(line)
             let cont = try Executor.run(kernel: kernel, cmds: cmds)
             if !cont { return }

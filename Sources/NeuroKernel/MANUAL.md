@@ -17,6 +17,7 @@ Graph DSL (file-based)
 - Quotes supported for paths: "path with spaces"
 - Vectors: CSV floats 0.1,0.2,0.3
 - Line continuation: end a line with `\\` to continue on the next line
+- In REPL, `model create ... graph begin` blocks can be pasted across multiple lines; execution happens when `graph end` is entered.
 
 Commands
 help
