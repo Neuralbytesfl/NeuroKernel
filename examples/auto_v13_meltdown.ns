@@ -1,0 +1,95 @@
+rng seed_deterministic hex 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+rng show
+
+sched timeslice_ms 1
+limit rss_mb 64
+limit workers 24
+
+# Model S: deep classifier (2 -> 3)
+model create S graph begin
+  input 2
+  dense s1 in 2 out 128
+  relu sr1
+  dense s2 in 128 out 128
+  relu sr2
+  dense s3 in 128 out 64
+  relu sr3
+  dense s4 in 64 out 3
+  softmax ss
+  chain s1 sr1 s2 sr2 s3 sr3 s4 ss
+graph end
+
+# Cleaner training signal for stress diagnostics.
+model train S csv "{{DATASET_PATH}}" epochs 900 lr 0.02 grad_log_every 100
+ctx create ctxS model S device cpu
+
+# Model R: reducer (3 -> 2)
+model create R graph begin
+  input 3
+  dense r1 in 3 out 32
+  relu rr1
+  dense r2 in 32 out 2
+  softmax rs
+  chain r1 rr1 r2 rs
+graph end
+ctx create ctxR model R device cpu
+
+# Model F: feedback expander (2 -> 3)
+model create F graph begin
+  input 2
+  dense f1 in 2 out 32
+  relu fr1
+  dense f2 in 32 out 3
+  softmax fs
+  chain f1 fr1 f2 fs
+graph end
+ctx create ctxF model F device cpu
+
+# Model M: monitor (2 -> 2)
+model create M graph begin
+  input 2
+  dense m1 in 2 out 2
+  softmax ms
+  chain m1 ms
+graph end
+ctx create ctxM model M device cpu
+
+chan create cS cap 16
+chan create cF cap 16
+chan create cR cap 8
+
+# Producers: 8x S(2->3) -> cS
+worker spawn p0 ctx ctxS interval_ms 1 priority normal source input 0.10,0.16 sink chan cS
+worker spawn p1 ctx ctxS interval_ms 1 priority normal source input 0.28,0.39 sink chan cS
+worker spawn p2 ctx ctxS interval_ms 1 priority normal source input 0.52,0.35 sink chan cS
+worker spawn p3 ctx ctxS interval_ms 1 priority normal source input 0.12,0.82 sink chan cS
+worker spawn p4 ctx ctxS interval_ms 1 priority normal source input 0.76,0.16 sink chan cS
+worker spawn p5 ctx ctxS interval_ms 1 priority normal source input 0.40,0.83 sink chan cS
+worker spawn p6 ctx ctxS interval_ms 1 priority normal source input 0.66,0.66 sink chan cS
+worker spawn p7 ctx ctxS interval_ms 1 priority normal source input 0.09,0.58 sink chan cS
+
+# Reducers: 6x R(3->2) <- cS -> cR
+worker spawn r0 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+worker spawn r1 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+worker spawn r2 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+worker spawn r3 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+worker spawn r4 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+worker spawn r5 ctx ctxR interval_ms 1 priority high source chan cS sink chan cR
+
+# Feedback expanders: 4x F(2->3) <- cR -> cF
+worker spawn f0 ctx ctxF interval_ms 1 priority normal source chan cR sink chan cF
+worker spawn f1 ctx ctxF interval_ms 1 priority normal source chan cR sink chan cF
+worker spawn f2 ctx ctxF interval_ms 1 priority normal source chan cR sink chan cF
+worker spawn f3 ctx ctxF interval_ms 1 priority normal source chan cR sink chan cF
+
+# Back-reducers: 4x R(3->2) <- cF -> cR
+worker spawn rb0 ctx ctxR interval_ms 1 priority high source chan cF sink chan cR
+worker spawn rb1 ctx ctxR interval_ms 1 priority high source chan cF sink chan cR
+worker spawn rb2 ctx ctxR interval_ms 1 priority high source chan cF sink chan cR
+worker spawn rb3 ctx ctxR interval_ms 1 priority high source chan cF sink chan cR
+
+# Monitor drain
+worker spawn mon ctx ctxM interval_ms 50 priority low source chan cR sink print
+
+sleep 10000
+stats
