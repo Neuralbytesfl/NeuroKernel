@@ -31,3 +31,14 @@ Notes:
 
 - The server executes local scripts through the `neurok` binary built in this repo.
 - Build first if needed: `swift build -c release`.
+- Abuse guardrails are enabled by default:
+  - payload limits return HTTP `413`
+  - active-job saturation returns HTTP `429`
+  - per-job log line retention is capped (older lines dropped)
+- Optional guardrail overrides:
+  - `NEUROK_WEB_MAX_ACTIVE_JOBS`
+  - `NEUROK_WEB_MAX_BATCH_SCRIPTS`
+  - `NEUROK_WEB_MAX_SCRIPT_BYTES`
+  - `NEUROK_WEB_MAX_BATCH_TOTAL_BYTES`
+  - `NEUROK_WEB_MAX_DATASET_BYTES`
+  - `NEUROK_WEB_MAX_JOB_LOG_LINES`

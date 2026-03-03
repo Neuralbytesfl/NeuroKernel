@@ -1,0 +1,21 @@
+rng seed_deterministic hex 9999999999999999999999999999999999999999999999999999999999999999
+rng show
+
+model create ptrain graph begin
+  input 2
+  dense d1 in 2 out 64
+  relu r1
+  dense d2 in 64 out 32
+  relu r2
+  dense d3 in 32 out 2
+  softmax s1
+  chain d1 r1 d2 r2 d3 s1
+graph end
+
+model train ptrain csv "examples/auto_linux_train_parallel.csv" epochs 600 lr 0.04 grad_log_every 200
+
+ctx create pctx model ptrain device cpu
+worker spawn pw1 ctx pctx interval_ms 60 priority normal source input 0,1 sink print
+sleep 220
+stats
+worker stopall

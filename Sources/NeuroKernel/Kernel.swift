@@ -1,4 +1,5 @@
 import Foundation
+import Dispatch
 
 enum WorkerPriority: String {
     case low, normal, high
@@ -291,27 +292,19 @@ final class Kernel {
             throw NKError.runtime("Training requires chain to end with softmax")
         }
         let denseChainNames = chainNodes.filter { $0.kind == .dense }.map { $0.name }
+        // AUTO-IMPROVEMENT: enable Linux parallel batch training for high-core hosts (EPYC), keep Apple path unchanged.
+        let trainThreads = trainingThreadCount(sampleCount: samples.count)
 
         var avgLoss: Float = 0
         var avgAcc: Float = 0
         var checkpointsSaved = 0
 
         for epoch in 0..<epochs {
-            var gradByDense: [String: DenseGrad] = [:]
-            for node in model.nodes where node.kind == .dense {
-                guard let dp = node.dense else { continue }
-                gradByDense[node.name] = DenseGrad(w: [Float](repeating: 0, count: dp.w.count),
-                                                   b: [Float](repeating: 0, count: dp.b.count))
-            }
-
-            for sample in samples {
-                let (probs, preByName) = try trainForward(model: model, input: sample.input)
-                guard sample.label >= 0, sample.label < probs.count else {
-                    throw NKError.runtime("Label \(sample.label) out of range 0..<\(probs.count)")
-                }
-                var delta = probs
-                delta[sample.label] -= 1.0
-                try trainBackwardAccumulate(model: model, deltaOut: delta, preByName: preByName, grads: &gradByDense)
+            let gradByDense: [String: DenseGrad]
+            if trainThreads > 1 {
+                gradByDense = try accumulateBatchGradientsParallel(model: model, samples: samples, threads: trainThreads)
+            } else {
+                gradByDense = try accumulateBatchGradientsSerial(model: model, samples: samples)
             }
 
             let invN = 1.0 / Float(samples.count)
@@ -350,19 +343,9 @@ final class Kernel {
                 model.nodes[idx].dense = dp
             }
 
-            var epochLoss: Float = 0
-            var correct = 0
-            for sample in samples {
-                let (probs, _) = try trainForward(model: model, input: sample.input)
-                let p = max(probs[sample.label], 1e-9)
-                epochLoss += -logf(p)
-                if argmax(probs) == sample.label {
-                    correct += 1
-                }
-            }
-
-            avgLoss = epochLoss / Float(samples.count)
-            avgAcc = Float(correct) / Float(samples.count)
+            let eval = try evaluateModel(model: model, samples: samples, threads: trainThreads)
+            avgLoss = eval.avgLoss
+            avgAcc = eval.avgAcc
             if let total = gradTotalNorm, let first = gradFirstNorm, let last = gradLastNorm {
                 // AUTO-IMPROVEMENT: combined epoch metrics make optimization diagnostics visible in realtime.
                 print(
@@ -435,6 +418,154 @@ final class Kernel {
             out.append(LabeledRow(input: input, label: label))
         }
         return out
+    }
+
+    private func makeDenseGradBuffers(model: ModelGraph) -> [String: DenseGrad] {
+        var out: [String: DenseGrad] = [:]
+        for node in model.nodes where node.kind == .dense {
+            guard let dp = node.dense else { continue }
+            out[node.name] = DenseGrad(
+                w: [Float](repeating: 0, count: dp.w.count),
+                b: [Float](repeating: 0, count: dp.b.count)
+            )
+        }
+        return out
+    }
+
+    private func mergeDenseGrad(_ src: DenseGrad, into dst: inout DenseGrad) {
+        for i in 0..<dst.w.count { dst.w[i] += src.w[i] }
+        for i in 0..<dst.b.count { dst.b[i] += src.b[i] }
+    }
+
+    private func trainingThreadCount(sampleCount: Int) -> Int {
+        #if os(Linux)
+        let envRaw = ProcessInfo.processInfo.environment["NEUROK_TRAIN_THREADS"] ?? ""
+        if let envThreads = Int(envRaw), envThreads > 0 {
+            return max(1, min(sampleCount, envThreads))
+        }
+        let cores = max(1, ProcessInfo.processInfo.activeProcessorCount)
+        // AUTO-IMPROVEMENT: cap default fan-out to avoid huge gradient scratch buffers.
+        let autoThreads = min(16, cores)
+        return max(1, min(sampleCount, autoThreads))
+        #else
+        return 1
+        #endif
+    }
+
+    private func accumulateBatchGradientsSerial(model: ModelGraph, samples: [LabeledRow]) throws -> [String: DenseGrad] {
+        var gradByDense = makeDenseGradBuffers(model: model)
+        for sample in samples {
+            let (probs, preByName) = try trainForward(model: model, input: sample.input)
+            guard sample.label >= 0, sample.label < probs.count else {
+                throw NKError.runtime("Label \(sample.label) out of range 0..<\(probs.count)")
+            }
+            var delta = probs
+            delta[sample.label] -= 1.0
+            try trainBackwardAccumulate(model: model, deltaOut: delta, preByName: preByName, grads: &gradByDense)
+        }
+        return gradByDense
+    }
+
+    private func accumulateBatchGradientsParallel(model: ModelGraph, samples: [LabeledRow], threads: Int) throws -> [String: DenseGrad] {
+        let chunkCount = max(1, min(threads, samples.count))
+        var chunkGrads = Array(repeating: makeDenseGradBuffers(model: model), count: chunkCount)
+        var firstError: Error?
+        let errorLock = NSLock()
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunk in
+            errorLock.lock()
+            let shouldAbort = firstError != nil
+            errorLock.unlock()
+            if shouldAbort { return }
+
+            let start = chunk * samples.count / chunkCount
+            let end = (chunk + 1) * samples.count / chunkCount
+            var localGrads = makeDenseGradBuffers(model: model)
+
+            do {
+                for i in start..<end {
+                    let sample = samples[i]
+                    let (probs, preByName) = try trainForward(model: model, input: sample.input)
+                    guard sample.label >= 0, sample.label < probs.count else {
+                        throw NKError.runtime("Label \(sample.label) out of range 0..<\(probs.count)")
+                    }
+                    var delta = probs
+                    delta[sample.label] -= 1.0
+                    try trainBackwardAccumulate(model: model, deltaOut: delta, preByName: preByName, grads: &localGrads)
+                }
+                chunkGrads[chunk] = localGrads
+            } catch {
+                errorLock.lock()
+                if firstError == nil { firstError = error }
+                errorLock.unlock()
+            }
+        }
+
+        if let error = firstError { throw error }
+
+        var merged = makeDenseGradBuffers(model: model)
+        for chunk in 0..<chunkCount {
+            for (name, src) in chunkGrads[chunk] {
+                guard var dst = merged[name] else { continue }
+                mergeDenseGrad(src, into: &dst)
+                merged[name] = dst
+            }
+        }
+        return merged
+    }
+
+    private func evaluateModel(model: ModelGraph, samples: [LabeledRow], threads: Int) throws -> (avgLoss: Float, avgAcc: Float) {
+        if threads <= 1 || samples.count <= 1 {
+            var epochLoss: Float = 0
+            var correct = 0
+            for sample in samples {
+                let (probs, _) = try trainForward(model: model, input: sample.input)
+                let p = max(probs[sample.label], 1e-9)
+                epochLoss += -logf(p)
+                if argmax(probs) == sample.label { correct += 1 }
+            }
+            return (epochLoss / Float(samples.count), Float(correct) / Float(samples.count))
+        }
+
+        let chunkCount = max(1, min(threads, samples.count))
+        var chunkLoss = [Float](repeating: 0, count: chunkCount)
+        var chunkCorrect = [Int](repeating: 0, count: chunkCount)
+        var firstError: Error?
+        let errorLock = NSLock()
+
+        DispatchQueue.concurrentPerform(iterations: chunkCount) { chunk in
+            errorLock.lock()
+            let shouldAbort = firstError != nil
+            errorLock.unlock()
+            if shouldAbort { return }
+
+            let start = chunk * samples.count / chunkCount
+            let end = (chunk + 1) * samples.count / chunkCount
+            var localLoss: Float = 0
+            var localCorrect = 0
+
+            do {
+                for i in start..<end {
+                    let sample = samples[i]
+                    let (probs, _) = try trainForward(model: model, input: sample.input)
+                    let p = max(probs[sample.label], 1e-9)
+                    localLoss += -logf(p)
+                    if argmax(probs) == sample.label { localCorrect += 1 }
+                }
+                chunkLoss[chunk] = localLoss
+                chunkCorrect[chunk] = localCorrect
+            } catch {
+                errorLock.lock()
+                if firstError == nil { firstError = error }
+                errorLock.unlock()
+            }
+        }
+
+        if let error = firstError { throw error }
+
+        let totalLoss = chunkLoss.reduce(0, +)
+        let totalCorrect = chunkCorrect.reduce(0, +)
+        return (totalLoss / Float(samples.count), Float(totalCorrect) / Float(samples.count))
     }
 
     private func trainForward(model: ModelGraph, input: [Float]) throws -> (probs: [Float], preByName: [String: [Float]]) {
