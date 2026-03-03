@@ -29,11 +29,15 @@ app.mount("/static", StaticFiles(directory=str(ROOT / "webui" / "static")), name
 class RunRequest(BaseModel):
     script: str = Field(min_length=1)
     mode: str = Field(default="runonly")
+    dataset: Optional[str] = None
+    dataset_name: str = Field(default="dataset.csv")
 
 
 class BatchRequest(BaseModel):
     scripts: List[str] = Field(min_length=1)
     mode: str = Field(default="runonly")
+    dataset: Optional[str] = None
+    dataset_name: str = Field(default="dataset.csv")
 
 
 @dataclass
@@ -64,7 +68,31 @@ def resolve_binary() -> Path:
     raise FileNotFoundError("neurok binary not found. Build with: swift build -c release")
 
 
-async def run_one_script(job: Job, binary: Path, script_text: str, index: int, total: int) -> int:
+async def run_one_script(
+    job: Job,
+    binary: Path,
+    script_text: str,
+    index: int,
+    total: int,
+    dataset_text: Optional[str] = None,
+    dataset_name: str = "dataset.csv",
+) -> int:
+    if dataset_text is not None and dataset_text.strip():
+        ds_tmp = tempfile.NamedTemporaryFile(
+            mode="w",
+            suffix=f"_{os.path.basename(dataset_name)}",
+            prefix=f"job_{job.id}_dataset_",
+            dir=RUN_DIR,
+            delete=False,
+        )
+        ds_tmp.write(dataset_text.strip() + "\n")
+        ds_tmp.flush()
+        ds_tmp.close()
+        dataset_path = ds_tmp.name
+        # Optional convenience token for scripts.
+        script_text = script_text.replace("{{DATASET_PATH}}", dataset_path)
+        await job.add_line(f"[batch {index}/{total}] dataset={os.path.basename(dataset_path)}")
+
     tmp = tempfile.NamedTemporaryFile(mode="w", suffix=".ns", prefix=f"job_{job.id}_", dir=RUN_DIR, delete=False)
     tmp.write(script_text)
     tmp.flush()
@@ -95,7 +123,7 @@ async def run_one_script(job: Job, binary: Path, script_text: str, index: int, t
     return code
 
 
-async def execute_job(job: Job, scripts: List[str]) -> None:
+async def execute_job(job: Job, scripts: List[str], dataset_text: Optional[str], dataset_name: str) -> None:
     try:
         binary = resolve_binary()
     except FileNotFoundError as e:
@@ -110,7 +138,15 @@ async def execute_job(job: Job, scripts: List[str]) -> None:
 
     final_code = 0
     for i, script in enumerate(scripts, start=1):
-        code = await run_one_script(job, binary, script, i, len(scripts))
+        code = await run_one_script(
+            job,
+            binary,
+            script,
+            i,
+            len(scripts),
+            dataset_text=dataset_text,
+            dataset_name=dataset_name,
+        )
         if code != 0:
             final_code = code
             break
@@ -141,7 +177,7 @@ async def run_script(req: RunRequest) -> dict:
     job_id = uuid.uuid4().hex[:12]
     job = Job(id=job_id, mode=req.mode, created_at=time.time(), scripts_total=1)
     jobs[job_id] = job
-    asyncio.create_task(execute_job(job, [req.script]))
+    asyncio.create_task(execute_job(job, [req.script], req.dataset, req.dataset_name))
     return {"job_id": job_id}
 
 
@@ -157,7 +193,7 @@ async def run_batch(req: BatchRequest) -> dict:
     job_id = uuid.uuid4().hex[:12]
     job = Job(id=job_id, mode=req.mode, created_at=time.time(), scripts_total=len(scripts))
     jobs[job_id] = job
-    asyncio.create_task(execute_job(job, scripts))
+    asyncio.create_task(execute_job(job, scripts, req.dataset, req.dataset_name))
     return {"job_id": job_id, "count": len(scripts)}
 
 

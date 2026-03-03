@@ -3,17 +3,18 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>NeuroKernel Web Console</title>
+  <title>NeuroKernel Console</title>
   <style>
     :root {
-      --bg: #0f172a;
-      --panel: #111827;
-      --ink: #e5e7eb;
+      --bg: #0b1020;
+      --panel: #11172a;
+      --edge: #222b45;
+      --txt: #e5e7eb;
       --muted: #9ca3af;
-      --line: #1f2937;
-      --accent: #22c55e;
+      --ok: #4ade80;
       --warn: #f59e0b;
-      --bad: #ef4444;
+      --err: #f87171;
+      --accent: #38bdf8;
       --mono: "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
       --sans: "Segoe UI", -apple-system, BlinkMacSystemFont, Helvetica, Arial, sans-serif;
     }
@@ -21,96 +22,98 @@
     * { box-sizing: border-box; }
     body {
       margin: 0;
+      background: linear-gradient(180deg, #0f172a, var(--bg));
+      color: var(--txt);
       font-family: var(--sans);
-      color: var(--ink);
-      background: radial-gradient(900px 500px at 20% -10%, #1e293b 0%, var(--bg) 55%);
-      min-height: 100vh;
     }
 
-    .wrap {
-      width: min(1200px, 96vw);
-      margin: 20px auto;
+    .app {
+      width: min(1220px, 96vw);
+      margin: 14px auto;
       display: grid;
-      grid-template-columns: 1.2fr 1fr;
-      gap: 14px;
+      gap: 10px;
     }
 
-    .card {
-      background: color-mix(in oklab, var(--panel) 90%, black 10%);
-      border: 1px solid var(--line);
-      border-radius: 12px;
-      overflow: hidden;
-      box-shadow: 0 10px 25px rgba(0, 0, 0, 0.25);
-    }
-
-    .head {
-      padding: 12px 14px;
-      border-bottom: 1px solid var(--line);
+    .bar {
       display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 12px;
-    }
-
-    .head h2 {
-      margin: 0;
-      font-size: 15px;
-      letter-spacing: 0.02em;
-    }
-
-    .body { padding: 12px; }
-
-    textarea {
-      width: 100%;
-      min-height: 220px;
-      resize: vertical;
-      border-radius: 10px;
-      background: #0b1220;
-      color: #d1d5db;
-      border: 1px solid #223147;
-      padding: 10px;
-      font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.45;
-    }
-
-    .controls {
-      display: flex;
-      flex-wrap: wrap;
       gap: 8px;
-      margin: 10px 0;
       align-items: center;
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      padding: 8px;
+      position: sticky;
+      top: 8px;
+      z-index: 2;
     }
 
-    button, select {
-      border: 1px solid #2d3a52;
-      background: #111a2b;
-      color: #e5e7eb;
-      border-radius: 8px;
-      padding: 8px 10px;
-      cursor: pointer;
+    button, select, input {
+      border: 1px solid #31405f;
+      background: #172033;
+      color: var(--txt);
+      border-radius: 7px;
       font-size: 12px;
+      padding: 8px 10px;
     }
 
+    button { cursor: pointer; }
     button.primary {
-      background: linear-gradient(180deg, #14532d, #166534);
-      border-color: #15803d;
-      color: #ecfdf5;
+      background: linear-gradient(180deg, #0f766e, #0e7490);
+      border-color: #0ea5e9;
       font-weight: 700;
     }
 
     .status {
+      margin-left: auto;
       font-size: 12px;
       color: var(--muted);
-      margin-left: auto;
+      white-space: nowrap;
+    }
+
+    .editors {
+      display: grid;
+      grid-template-columns: 1fr 0.9fr;
+      gap: 10px;
+    }
+
+    .card {
+      background: var(--panel);
+      border: 1px solid var(--edge);
+      border-radius: 10px;
+      overflow: hidden;
+    }
+
+    .card h3 {
+      margin: 0;
+      font-size: 12px;
+      color: var(--muted);
+      border-bottom: 1px solid var(--edge);
+      padding: 8px 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    textarea {
+      width: 100%;
+      min-height: 310px;
+      max-height: 56vh;
+      resize: vertical;
+      border: 0;
+      outline: none;
+      background: #0a1120;
+      color: #d1d5db;
+      font-family: var(--mono);
+      font-size: 12px;
+      line-height: 1.45;
+      padding: 10px;
     }
 
     .log {
-      min-height: 360px;
-      max-height: 60vh;
+      min-height: 240px;
+      max-height: 40vh;
       overflow: auto;
       background: #050a14;
-      border: 1px solid #1f2937;
+      border: 1px solid var(--edge);
       border-radius: 10px;
       padding: 10px;
       font-family: var(--mono);
@@ -119,64 +122,42 @@
       white-space: pre-wrap;
     }
 
-    .manual {
-      min-height: 360px;
-      max-height: 60vh;
-      overflow: auto;
-      background: #090f1a;
-      border: 1px solid #1f2937;
-      border-radius: 10px;
-      padding: 10px;
-      font-family: var(--mono);
-      font-size: 12px;
-      line-height: 1.45;
-      white-space: pre-wrap;
-    }
-
-    .tag {
-      color: #86efac;
-      font-weight: 700;
-      margin-right: 8px;
-    }
-
-    @media (max-width: 980px) {
-      .wrap { grid-template-columns: 1fr; }
+    @media (max-width: 900px) {
+      .editors { grid-template-columns: 1fr; }
+      textarea { min-height: 220px; }
     }
   </style>
 </head>
 <body>
-  <div class="wrap">
-    <section class="card">
-      <div class="head">
-        <h2>NeuroKernel Runner</h2>
-        <div class="status" id="status">idle</div>
-      </div>
-      <div class="body">
-        <div class="controls">
-          <label for="mode">mode:</label>
-          <select id="mode">
-            <option value="runonly" selected>runonly</option>
-            <option value="run">run</option>
-          </select>
-          <button class="primary" id="runOne">Run Script</button>
-          <button id="runBatch">Run Batch (--- split)</button>
-          <button id="loadExample">Load Example</button>
-          <button id="clearLog">Clear Log</button>
-        </div>
+  <main class="app">
+    <section class="bar">
+      <select id="mode">
+        <option value="runonly" selected>runonly</option>
+        <option value="run">run</option>
+      </select>
+      <button class="primary" id="runOne">Run</button>
+      <button id="runBatch">Run Batch (---)</button>
+      <button id="clearLog">Clear Output</button>
+      <button id="loadDemo">Load Demo</button>
+      <span class="status" id="status">idle</span>
+    </section>
+
+    <section class="editors">
+      <article class="card">
+        <h3>Script (.ns)</h3>
         <textarea id="script" spellcheck="false"></textarea>
-      </div>
+      </article>
+      <article class="card">
+        <h3>Dataset (CSV, optional) - use {{DATASET_PATH}} in script</h3>
+        <textarea id="dataset" spellcheck="false"></textarea>
+      </article>
     </section>
 
     <section class="card">
-      <div class="head"><h2>Realtime Output</h2></div>
-      <div class="body"><div class="log" id="log"></div></div>
+      <h3>Realtime Output</h3>
+      <div class="log" id="log"></div>
     </section>
-
-    <section class="card">
-      <div class="head"><h2>Manual</h2></div>
-      <div class="body"><div class="manual" id="manual">Loading manual...</div></div>
-    </section>
-  </div>
+  </main>
 
   <script>
     const $ = (id) => document.getElementById(id);
@@ -184,58 +165,59 @@
     const statusEl = $("status");
     let es = null;
 
-    const sample = `rng seed_deterministic hex 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
-rng show
-model create m1 graph begin
-  input 4
-  dense d1 in 4 out 8
+    const demoScript = `rng seed_deterministic hex 00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff
+model create m graph begin
+  input 2
+  dense d1 in 2 out 8
   relu r1
   dense d2 in 8 out 2
   softmax s1
   chain d1 r1 d2 s1
 graph end
-ctx create c1 model m1 device cpu
-ctx run c1 input 1,0,0,0`;
+model train m csv "{{DATASET_PATH}}" epochs 120 lr 0.1 grad_log_every 30
+ctx create c model m device cpu
+ctx run c input 0,1`;
+
+    const demoData = `0,0,0
+0,1,1
+1,0,1
+1,1,0`;
 
     function append(line, color = "") {
-      const span = document.createElement("div");
-      if (color) span.style.color = color;
-      span.textContent = line;
-      logEl.appendChild(span);
+      const div = document.createElement("div");
+      if (color) div.style.color = color;
+      div.textContent = line;
+      logEl.appendChild(div);
       logEl.scrollTop = logEl.scrollHeight;
-    }
-
-    async function loadManual() {
-      const res = await fetch("/api/manual");
-      const data = await res.json();
-      $("manual").textContent = data.manual;
     }
 
     async function startJob(url, body) {
       if (es) { es.close(); es = null; }
       statusEl.textContent = "starting...";
+
       const res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body)
       });
+
       if (!res.ok) {
-        const err = await res.text();
-        append(`request failed: ${err}`, "#f87171");
+        append(`request failed: ${await res.text()}`, "#f87171");
         statusEl.textContent = "error";
         return;
       }
+
       const data = await res.json();
       const jobId = data.job_id;
       statusEl.textContent = `running ${jobId}`;
-      append(`[job ${jobId}] started`, "#93c5fd");
+      append(`[job ${jobId}] started`, "#7dd3fc");
 
       es = new EventSource(`/api/jobs/${jobId}/stream`);
-      es.onmessage = (event) => {
-        const payload = JSON.parse(event.data);
+      es.onmessage = (ev) => {
+        const payload = JSON.parse(ev.data);
         if (payload.line) {
           const line = payload.line;
-          if (line.startsWith("EPOCH") || line.startsWith("GRAD")) append(line, "#f0abfc");
+          if (line.startsWith("EPOCH") || line.startsWith("GRAD")) append(line, "#f5d0fe");
           else if (line.startsWith("OK")) append(line, "#86efac");
           else if (line.startsWith("WARN") || line.toLowerCase().includes("error")) append(line, "#fbbf24");
           else append(line);
@@ -247,31 +229,34 @@ ctx run c1 input 1,0,0,0`;
           es = null;
         }
       };
-      es.onerror = () => {
-        append("stream disconnected", "#fbbf24");
+      es.onerror = () => append("stream disconnected", "#fbbf24");
+    }
+
+    function commonBody() {
+      return {
+        mode: $("mode").value,
+        dataset: $("dataset").value.trim(),
+        dataset_name: "dataset.csv"
       };
     }
 
     $("runOne").onclick = () => {
       const script = $("script").value.trim();
       if (!script) return;
-      startJob("/api/run", { script, mode: $("mode").value });
+      startJob("/api/run", { ...commonBody(), script });
     };
 
     $("runBatch").onclick = () => {
-      const chunks = $("script").value
-        .split(/^---+$/m)
-        .map(s => s.trim())
-        .filter(Boolean);
-      if (!chunks.length) return;
-      startJob("/api/run_batch", { scripts: chunks, mode: $("mode").value });
+      const scripts = $("script").value.split(/^---+$/m).map(s => s.trim()).filter(Boolean);
+      if (!scripts.length) return;
+      startJob("/api/run_batch", { ...commonBody(), scripts });
     };
 
-    $("loadExample").onclick = () => { $("script").value = sample; };
-    $("clearLog").onclick = () => { logEl.textContent = ""; };
+    $("clearLog").onclick = () => { logEl.textContent = ""; statusEl.textContent = "idle"; };
+    $("loadDemo").onclick = () => { $("script").value = demoScript; $("dataset").value = demoData; };
 
-    $("script").value = sample;
-    loadManual();
+    $("script").value = demoScript;
+    $("dataset").value = demoData;
   </script>
 </body>
 </html>

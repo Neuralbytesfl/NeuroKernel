@@ -17,7 +17,7 @@ What it supports:
 
 - submit one `.ns` script and stream output in realtime
 - submit batch scripts (`---` separator in UI) and stream combined output
-- view `Sources/NeuroKernel/MANUAL.md` in-app
+- optional dataset textarea; scripts can use `{{DATASET_PATH}}` placeholder
 
 API endpoints:
 
