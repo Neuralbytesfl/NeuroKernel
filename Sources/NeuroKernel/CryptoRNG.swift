@@ -1,6 +1,17 @@
 import Foundation
+#if canImport(CryptoKit)
 import CryptoKit
+#elseif canImport(Crypto)
+import Crypto
+#else
+#error("No SHA256 implementation available. Install CryptoKit (Apple) or swift-crypto.")
+#endif
+
+#if os(Linux)
+import Glibc
+#else
 import Security
+#endif
 
 protocol NKRandom {
     mutating func fill(_ buffer: UnsafeMutableRawBufferPointer) throws
@@ -8,10 +19,27 @@ protocol NKRandom {
 
 struct SecureRNG: NKRandom {
     mutating func fill(_ buffer: UnsafeMutableRawBufferPointer) throws {
+        #if os(Linux)
+        let fd = open("/dev/urandom", O_RDONLY)
+        guard fd >= 0 else {
+            throw NKError.runtime("open(/dev/urandom) failed")
+        }
+        defer { _ = close(fd) }
+
+        var offset = 0
+        while offset < buffer.count {
+            let n = read(fd, buffer.baseAddress!.advanced(by: offset), buffer.count - offset)
+            guard n > 0 else {
+                throw NKError.runtime("read(/dev/urandom) failed")
+            }
+            offset += n
+        }
+        #else
         let rc = SecRandomCopyBytes(kSecRandomDefault, buffer.count, buffer.baseAddress!)
         guard rc == errSecSuccess else {
             throw NKError.runtime("SecRandomCopyBytes failed: \(rc)")
         }
+        #endif
     }
 }
 
@@ -37,9 +65,7 @@ struct DeterministicRNG: NKRandom, Codable {
             let digest = SHA256.hash(data: msg)
             let block = Data(digest)
             let n = min(block.count, buffer.count - offset)
-            _ = block.withUnsafeBytes { src in
-                memcpy(buffer.baseAddress!.advanced(by: offset), src.baseAddress!, n)
-            }
+            _ = block.copyBytes(to: UnsafeMutableRawBufferPointer(rebasing: buffer[offset..<(offset + n)]))
             offset += n
             counter &+= 1
         }

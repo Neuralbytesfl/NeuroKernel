@@ -1,5 +1,4 @@
 import Foundation
-import Darwin
 
 final class GraphBuilder {
     private let kernel: Kernel

@@ -1,11 +1,21 @@
 import Foundation
+#if os(Linux)
+import Glibc
+#else
 import Darwin
+#endif
 
 // AUTO-IMPROVEMENT: force unbuffered output so piped runners can stream logs in real time.
 setbuf(stdout, nil)
 setbuf(stderr, nil)
 
 let kernel = Kernel()
+
+#if os(Linux)
+let buildPlatform = "linux"
+#else
+let buildPlatform = "macOS"
+#endif
 
 // AUTO-IMPROVEMENT: keep interactive REPL quiet by default; enable monitor explicitly via env.
 if let msRaw = ProcessInfo.processInfo.environment["NEUROK_MONITOR_MS"],
@@ -41,7 +51,7 @@ func repl() {
             && cmd.args[0].lowercased() == "end"
     }
 
-    print("neurok — Narrow Neural Microkernel (Swift + MPSGraph). Type 'help'.")
+    print("neurok — Narrow Neural Microkernel (Swift). platform=\(buildPlatform). Type 'help'.")
     var pendingGraphLines: [String]? = nil
 
     while true {

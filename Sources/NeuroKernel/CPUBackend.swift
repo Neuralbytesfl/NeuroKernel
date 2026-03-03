@@ -1,5 +1,4 @@
 import Foundation
-import Accelerate
 
 enum CPUBackend {
     static func dense(input: UnsafeBufferPointer<Float>, params: DenseParams, arena: Arena) -> UnsafeMutableBufferPointer<Float> {
@@ -7,18 +6,13 @@ enum CPUBackend {
         let out = arena.allocate(Float.self, count: params.outSize)
 
         // y = W * x + b ; W is out x in (row-major)
-        // Use vDSP_mmul for matrix-vector: out(1xout) = x(1xin) * W^T? easiest do manual for now,
-        // but we keep it safe/fast: vDSP_mmul expects matrices; overhead for small dims.
-        // We'll do optimized scalar loop + vDSP dot could be used later.
+        // AUTO-IMPROVEMENT: portable loop implementation keeps CPU path cross-platform.
         for j in 0..<params.outSize {
             var acc = params.b[j]
             let base = j * params.inSize
-            // dot
-            var dot: Float = 0
-            params.w.withUnsafeBufferPointer { wbuf in
-                vDSP_dotpr(input.baseAddress!, 1, wbuf.baseAddress!.advanced(by: base), 1, &dot, vDSP_Length(params.inSize))
+            for i in 0..<params.inSize {
+                acc += params.w[base + i] * input[i]
             }
-            acc += dot
             out[j] = acc
         }
         return out
@@ -26,28 +20,29 @@ enum CPUBackend {
 
     static func relu(_ x: UnsafeBufferPointer<Float>, arena: Arena) -> UnsafeMutableBufferPointer<Float> {
         let out = arena.allocate(Float.self, count: x.count)
-        _ = out.initialize(from: x)
-        var zero: Float = 0
-        vDSP_vthr(out.baseAddress!, 1, &zero, out.baseAddress!, 1, vDSP_Length(out.count))
+        for i in 0..<x.count {
+            out[i] = max(0, x[i])
+        }
         return out
     }
 
     static func softmax(_ x: UnsafeBufferPointer<Float>, arena: Arena) -> UnsafeMutableBufferPointer<Float> {
         let out = arena.allocate(Float.self, count: x.count)
-        _ = out.initialize(from: x)
+        guard x.count > 0 else { return out }
 
-        var maxv: Float = 0
-        vDSP_maxv(out.baseAddress!, 1, &maxv, vDSP_Length(out.count))
-        var negMax = -maxv
-        vDSP_vsadd(out.baseAddress!, 1, &negMax, out.baseAddress!, 1, vDSP_Length(out.count))
-
-        var n = Int32(out.count)
-        vvexpf(out.baseAddress!, out.baseAddress!, &n)
+        var maxv = x[0]
+        for i in 1..<x.count { maxv = max(maxv, x[i]) }
 
         var sum: Float = 0
-        vDSP_sve(out.baseAddress!, 1, &sum, vDSP_Length(out.count))
-        var inv: Float = 1.0 / max(sum, 1e-20)
-        vDSP_vsmul(out.baseAddress!, 1, &inv, out.baseAddress!, 1, vDSP_Length(out.count))
+        for i in 0..<x.count {
+            let e = Float(Foundation.exp(Double(x[i] - maxv)))
+            out[i] = e
+            sum += e
+        }
+        let inv: Float = 1.0 / max(sum, 1e-20)
+        for i in 0..<x.count {
+            out[i] *= inv
+        }
         return out
     }
 
@@ -72,7 +67,7 @@ enum CPUBackend {
 
     static func softmaxArray(_ x: [Float]) -> [Float] {
         guard let mx = x.max() else { return [] }
-        let ex = x.map { expf($0 - mx) }
+        let ex = x.map { Float(Foundation.exp(Double($0 - mx))) }
         let sum = max(ex.reduce(0, +), 1e-20)
         let inv: Float = 1.0 / sum
         return ex.map { $0 * inv }

@@ -710,7 +710,8 @@ final class Kernel {
         let task = Task.detached(priority: spec.priority.taskPriority) { [weak self] in
             guard let self else { return }
             while !Task.isCancelled {
-                let t0 = CFAbsoluteTimeGetCurrent()
+                // AUTO-IMPROVEMENT: use Foundation time source for Linux/macOS portability.
+                let t0 = Date().timeIntervalSinceReferenceDate
                 var succeeded = false
                 do {
                     let input = try self.resolveWorkerInput(spec)
@@ -720,7 +721,7 @@ final class Kernel {
                 } catch {
                     self.recordWorkerError(name: spec.name, error: error)
                 }
-                let t1 = CFAbsoluteTimeGetCurrent()
+                let t1 = Date().timeIntervalSinceReferenceDate
                 let dt = (t1 - t0) * 1000.0
 
                 self.recordWorkerStep(name: spec.name, latencyMs: dt, succeeded: succeeded)
