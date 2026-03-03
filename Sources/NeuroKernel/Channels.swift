@@ -19,12 +19,13 @@ final class Channel<T>: @unchecked Sendable {
         return (cap, count)
     }
 
-    func push(_ x: T, block: Bool = true) {
+    @discardableResult
+    func push(_ x: T, block: Bool = true) -> Bool {
         cond.lock()
         defer { cond.unlock() }
 
         if !block, count >= cap {
-            return
+            return false
         }
 
         while count >= cap {
@@ -35,6 +36,7 @@ final class Channel<T>: @unchecked Sendable {
         tail = (tail + 1) % cap
         count += 1
         cond.signal()
+        return true
     }
 
     func pop(block: Bool = true) -> T? {

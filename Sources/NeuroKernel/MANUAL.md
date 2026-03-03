@@ -55,8 +55,14 @@ ctx drop <ctxName>
 # Channels
 chan create <name> cap <n>
 chan push <name> <csv>
+chan push_nb <name> <csv>
 chan pop <name>
+chan pop_nb <name>
 chan info <name>
+
+Non-blocking channel behavior
+- `chan push_nb`: returns immediately; prints `OK ...` when enqueued or `FULL chan <name>` when the buffer is full.
+- `chan pop_nb`: returns immediately; prints `CHAN ...` when a value is available or `EMPTY chan <name>` when no value is available.
 
 # Workers (routing workers)
 worker spawn <wName> ctx <ctxName> interval_ms <n> priority low|normal|high

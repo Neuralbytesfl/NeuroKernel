@@ -164,6 +164,16 @@ final class Kernel {
         ch.push(vec, block: true)
     }
 
+    // AUTO-IMPROVEMENT: expose non-blocking enqueue semantics for scripts that must avoid backpressure stalls.
+    func chanPushNonBlocking(name: String, vec: [Float]) throws -> Bool {
+        let ch: Channel<[Float]>
+        lock.lock()
+        guard let c = channels[name] else { lock.unlock(); throw NKError.runtime("No channel: \(name)") }
+        ch = c
+        lock.unlock()
+        return ch.push(vec, block: false)
+    }
+
     func chanPop(name: String) throws -> [Float] {
         let ch: Channel<[Float]>
         lock.lock()
@@ -171,6 +181,16 @@ final class Kernel {
         ch = c
         lock.unlock()
         return ch.pop(block: true) ?? []
+    }
+
+    // AUTO-IMPROVEMENT: expose non-blocking dequeue semantics for polling workflows.
+    func chanPopNonBlocking(name: String) throws -> [Float]? {
+        let ch: Channel<[Float]>
+        lock.lock()
+        guard let c = channels[name] else { lock.unlock(); throw NKError.runtime("No channel: \(name)") }
+        ch = c
+        lock.unlock()
+        return ch.pop(block: false)
     }
 
     func chanInfo(name: String) throws -> String {

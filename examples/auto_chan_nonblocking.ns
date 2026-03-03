@@ -1,0 +1,27 @@
+rng seed_deterministic hex 111122223333444455556666777788889999aaaabbbbccccddddeeeeffff0000
+rng show
+
+model create nb_m graph begin
+  input 4
+  dense d1 in 4 out 5
+  relu r1
+  dense d2 in 5 out 2
+  softmax s1
+  chain d1 r1 d2 s1
+graph end
+
+ctx create nb_ctx model nb_m device cpu
+chan create nb_in cap 1
+chan create nb_out cap 2
+
+chan pop_nb nb_in
+chan push_nb nb_in 1,0,0,0
+chan push_nb nb_in 0,1,0,0
+
+worker spawn nb_w ctx nb_ctx interval_ms 50 priority normal source chan nb_in sink chan nb_out
+sleep 160
+worker stopall
+
+chan pop_nb nb_out
+chan pop_nb nb_out
+chan pop_nb nb_out

@@ -82,7 +82,7 @@ enum Executor {
             }
 
         case "chan":
-            guard cmd.args.count >= 1 else { throw NKError.parse("chan create|push|pop|info ...") }
+            guard cmd.args.count >= 1 else { throw NKError.parse("chan create|push|push_nb|pop|pop_nb|info ...") }
             let sub = cmd.args[0].lowercased()
             if sub == "create" {
                 guard cmd.args.count >= 4, cmd.args[2].lowercased() == "cap", let n = Int(cmd.args[3]) else {
@@ -95,15 +95,29 @@ enum Executor {
                 let v = try Script.parseCSV(cmd.args[2])
                 try kernel.chanPush(name: cmd.args[1], vec: v)
                 print("OK chan push \(cmd.args[1]) len=\(v.count)")
+            } else if sub == "push_nb" {
+                guard cmd.args.count >= 3 else { throw NKError.parse("chan push_nb <name> <csv>") }
+                let v = try Script.parseCSV(cmd.args[2])
+                // AUTO-IMPROVEMENT: expose non-blocking channel writes to avoid script stalls on full buffers.
+                let enqueued = try kernel.chanPushNonBlocking(name: cmd.args[1], vec: v)
+                print(enqueued ? "OK chan push_nb \(cmd.args[1]) len=\(v.count)" : "FULL chan \(cmd.args[1])")
             } else if sub == "pop" {
                 guard cmd.args.count >= 2 else { throw NKError.parse("chan pop <name>") }
                 let v = try kernel.chanPop(name: cmd.args[1])
                 print("CHAN " + v.map { String(format: "%.5f", $0) }.joined(separator: ","))
+            } else if sub == "pop_nb" {
+                guard cmd.args.count >= 2 else { throw NKError.parse("chan pop_nb <name>") }
+                // AUTO-IMPROVEMENT: expose polling reads for reactive scripts and diagnostics.
+                if let v = try kernel.chanPopNonBlocking(name: cmd.args[1]) {
+                    print("CHAN " + v.map { String(format: "%.5f", $0) }.joined(separator: ","))
+                } else {
+                    print("EMPTY chan \(cmd.args[1])")
+                }
             } else if sub == "info" {
                 guard cmd.args.count >= 2 else { throw NKError.parse("chan info <name>") }
                 print(try kernel.chanInfo(name: cmd.args[1]))
             } else {
-                throw NKError.parse("chan create|push|pop|info ...")
+                throw NKError.parse("chan create|push|push_nb|pop|pop_nb|info ...")
             }
 
         case "model":
