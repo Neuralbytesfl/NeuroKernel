@@ -297,6 +297,9 @@ final class Kernel {
             }
 
             let invN = 1.0 / Float(samples.count)
+            var gradTotalNorm: Float? = nil
+            var gradFirstNorm: Float? = nil
+            var gradLastNorm: Float? = nil
             if let every = gradLogEvery, (epoch + 1) % every == 0 {
                 let firstName = denseChainNames.first
                 let lastName = denseChainNames.last
@@ -308,8 +311,9 @@ final class Kernel {
                     totalSq += g.b.reduce(0) { $0 + ($1 * $1) }
                 }
                 let totalNorm = sqrtf(totalSq)
-                // AUTO-IMPROVEMENT: gradient norm logging helps diagnose vanishing/exploding updates.
-                print(String(format: "GRAD epoch=%d total=%.6f first=%.6f last=%.6f", epoch + 1, totalNorm, firstNorm, lastNorm))
+                gradTotalNorm = totalNorm
+                gradFirstNorm = firstNorm
+                gradLastNorm = lastNorm
             }
 
             for (nodeName, grad) in gradByDense {
@@ -341,6 +345,20 @@ final class Kernel {
 
             avgLoss = epochLoss / Float(samples.count)
             avgAcc = Float(correct) / Float(samples.count)
+            if let total = gradTotalNorm, let first = gradFirstNorm, let last = gradLastNorm {
+                // AUTO-IMPROVEMENT: combined epoch metrics make optimization diagnostics visible in realtime.
+                print(
+                    String(
+                        format: "EPOCH epoch=%d loss=%.6f acc=%.4f grad_total=%.6f grad_first=%.6f grad_last=%.6f",
+                        epoch + 1,
+                        avgLoss,
+                        avgAcc,
+                        total,
+                        first,
+                        last
+                    )
+                )
+            }
 
             if let every = checkpointEvery, let prefix = checkpointPrefix, (epoch + 1) % every == 0 {
                 // AUTO-IMPROVEMENT: periodic checkpointing allows long training runs to resume/review snapshots.

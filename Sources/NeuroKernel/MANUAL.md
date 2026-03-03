@@ -56,7 +56,7 @@ Training from CSV (CPU SGD)
 - Training expects chain to end with `softmax` and uses softmax cross-entropy + SGD.
 - Output includes final `loss` and `acc`.
 - Optional checkpointing: when checkpoint options are set together, snapshots are saved as `<pathPrefix>_e<epoch>.json`.
-- Optional gradient diagnostics: `grad_log_every <n>` prints periodic gradient L2 norms (`total`, first dense layer, last dense layer).
+- Optional gradient diagnostics: `grad_log_every <n>` prints periodic `EPOCH` lines with `loss`, `acc`, and gradient L2 norms (`grad_total`, first dense, last dense).
 
 # Contexts
 ctx create <ctxName> model <modelName> device cpu|gpu
